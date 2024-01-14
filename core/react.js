@@ -22,23 +22,99 @@ const createTextNode = (val) => {
     }
 }
 
-
+let nextFiber = null;
 const render = (node, container) => {
     console.log('render--',node);
-    let dom = node.type === TEXT_NODE_TYPE 
-            ? document.createTextNode(node.nodeValue)
-            : document.createElement(node.type);
-    
-    Object.keys(node.props).forEach(key => {
-        if (key !== 'children') {
-            dom[key] = node.props[key];
-        } // TODO- 如果把children移到props外面，这里就可以少一步判断，会不会更好？？
-    }); // props
-
-
-    node.props.children.forEach(child => render(child, dom));
-    container.append(dom);
+    nextFiber = {
+        dom: container,
+        props: {
+            children: [node],
+        },
+    }
 }
+
+function workLoop(deadline) {
+    // 当前空余时间已经不够1ms了，不在执行任务
+    let shouldYield = deadline.timeRemaining() < 1;
+    while (!shouldYield && nextFiber)  {
+
+        // 渲染一个fiber并获取下一个要渲染的vdom
+        nextFiber = performWorkUnit(nextFiber);
+
+        shouldYield = deadline.timeRemaining() < 1;
+    }
+    requestIdleCallback(workLoop);
+}
+
+function createDom(type) {
+    return type === TEXT_NODE_TYPE 
+    ? document.createTextNode(nodeValue)
+    : document.createElement(type)
+}
+
+function updateProps(dom, props) {
+    Object.keys(props).forEach(key => {
+        if (key !== 'children') {
+            dom[key] = props[key];
+        }
+    }); 
+}
+
+function initChildren(fiber) {
+    let children = fiber.props.children;
+    let prevFiber = null; // 记录sibling的时候要用到前一个fiber节点
+    children.forEach((child, index) => {
+        let newFiber = {
+            child: null,
+            parent: fiber,
+            sibling: null,
+            type: child.type,
+            props: child.props,
+            dom: null,
+        };
+        if (index === 0) {
+            fiber.child = newFiber;
+        } else {
+            prevFiber.sibling = child;
+        }
+        prevFiber = child;
+    })
+
+}
+/**
+ * fiber中需要包含的结构有
+ * 1. child：Fiber类型
+   2. sibling： Fiber
+   3. parent: Fiber类型
+   4. type
+   5. props
+   6. dom // 是干嘛的
+ */
+function performWorkUnit(fiber) {
+
+    if (!fiber.dom) {
+        // 创建dom
+        let dom = (fiber.dom = createDom(fiber.type));
+        fiber.parent.dom.append(dom);
+    }
+    // 设置props
+    updateProps(fiber.dom, fiber.props);
+
+    // vdom -> 链表
+    initChildren(fiber);
+
+    // 返回下一个节点
+    if (fiber.child) {
+        return fiber.child;
+    }
+    if (fiber.sibling) {
+        return fiber.sibling;
+    }
+    return fiber.parent.sibling;
+
+}
+
+requestIdleCallback(workLoop);
 
 const React = {
     render,
