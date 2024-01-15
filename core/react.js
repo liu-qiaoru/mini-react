@@ -7,7 +7,8 @@ const createElement = (type, props, ...children) => {
         props: {
             ...props,
             children: children.map(item => {
-                return typeof item === 'string' ? createTextNode(item): item
+                const isTextNode = typeof item === 'string' || typeof item === 'number';
+                return isTextNode ? createTextNode(item): item
             }) // 考虑直接创建textNode节点
         } // 最开始写的时候children放在了props外面，放里面和放外面的区别，会对后续有什么影响？？
     }
@@ -61,7 +62,13 @@ function commitRoot(fiber) {
 function commitFiber(fiber) {
     if (fiber == null) return;
     // 挂载到父节点上
-    fiber.parent.dom.append(fiber.dom);
+    let fiberParent = fiber.parent;
+    while(fiberParent.dom == null) {
+        fiberParent = fiberParent.parent;
+    }
+    if (fiber.dom) {
+        fiberParent.dom.append(fiber.dom);
+    }
     // 递归挂载子节点
     commitFiber(fiber.child);
     commitFiber(fiber.sibling);
@@ -69,12 +76,14 @@ function commitFiber(fiber) {
 }
 
 function createDom(type) {
+    console.log(type);
     return type === TEXT_NODE_TYPE 
     ? document.createTextNode('')
     : document.createElement(type)
 }
 
 function updateProps(dom, props) {
+    if(props == null) return;
     Object.keys(props).forEach(key => {
         if (key !== 'children') {
             dom[key] = props[key];
@@ -82,8 +91,7 @@ function updateProps(dom, props) {
     }); 
 }
 
-function initChildren(fiber) {
-    let children = fiber.props.children;
+function initChildren(fiber, children) {
     let prevFiber = null; // 记录sibling的时候要用到前一个fiber节点
     children.forEach((child, index) => {
         let newFiber = {
@@ -113,17 +121,25 @@ function initChildren(fiber) {
    6. dom // 是干嘛的
  */
 function performWorkUnit(fiber) {
+    let isFunctionType = typeof fiber.type === 'function';
+    if (!isFunctionType) {
+        if (!fiber.dom) {
+            // 创建dom
+            let dom = (fiber.dom = createDom(fiber.type));
+            // fiber.parent.dom.append(dom);
 
-    if (!fiber.dom) {
-        // 创建dom
-        let dom = (fiber.dom = createDom(fiber.type));
-        // fiber.parent.dom.append(dom);
+            // 设置props
+            updateProps(dom, fiber.props);
+        }
     }
-    // 设置props
-    updateProps(fiber.dom, fiber.props);
 
     // vdom -> 链表
-    initChildren(fiber);
+
+    // 当fiber是一个fc的时候，就需要把它解析出来，同时把它当作children去转换
+    const children = isFunctionType 
+                    ? [fiber.type(fiber.props)] // 把它当作children去转换
+                    : fiber.props?.children ?? [];
+    initChildren(fiber, children);
 
     // 返回下一个节点
     if (fiber.child) {
@@ -132,7 +148,14 @@ function performWorkUnit(fiber) {
     if (fiber.sibling) {
         return fiber.sibling;
     }
-    return fiber.parent.sibling;
+
+    // parent.sibling不一定存在，比如fc，这时候就要继续向上查找
+    let fiberParent = fiber.parent;
+    while(fiberParent) {
+        if (fiberParent.sibling) return fiberParent.sibling;
+        fiberParent = fiberParent.parent;
+    }
+    // return fiber.parent.sibling;
 
 }
 
