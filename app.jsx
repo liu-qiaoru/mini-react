@@ -21,6 +21,9 @@
 import React from './core/react.js';
 // const App = React.createElement('div', {id: 'app'}, 'hello');
 // const App = <div id='app'>hello</div>
-const App = <div id='app'><div id="app_parent">child</div></div>
+const App = <div id='app'>
+                <div id="app_parent">child</div>
+                <div id="app_parent_2">child2</div>
+            </div>
 
 export {App}

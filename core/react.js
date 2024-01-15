@@ -21,7 +21,7 @@ const createTextNode = (val) => {
         }
     }
 }
-
+let root = null;
 let nextFiber = null;
 const render = (node, container) => {
     console.log('render--',node);
@@ -31,6 +31,7 @@ const render = (node, container) => {
             children: [node],
         },
     }
+    root = nextFiber;
 }
 
 function workLoop(deadline) {
@@ -43,12 +44,33 @@ function workLoop(deadline) {
 
         shouldYield = deadline.timeRemaining() < 1;
     }
+
+    // 所有的vdom都已经转换完毕了，这时需要把所有的dom挂载并渲染出来
+    if (nextFiber == null && root) {
+        commitRoot(root.child);
+    }
     requestIdleCallback(workLoop);
+}
+
+function commitRoot(fiber) {
+    console.log(fiber);
+    commitFiber(fiber);
+    root = null;
+}
+
+function commitFiber(fiber) {
+    if (fiber == null) return;
+    // 挂载到父节点上
+    fiber.parent.dom.append(fiber.dom);
+    // 递归挂载子节点
+    commitFiber(fiber.child);
+    commitFiber(fiber.sibling);
+
 }
 
 function createDom(type) {
     return type === TEXT_NODE_TYPE 
-    ? document.createTextNode(nodeValue)
+    ? document.createTextNode('')
     : document.createElement(type)
 }
 
@@ -75,9 +97,9 @@ function initChildren(fiber) {
         if (index === 0) {
             fiber.child = newFiber;
         } else {
-            prevFiber.sibling = child;
+            prevFiber.sibling = newFiber;
         }
-        prevFiber = child;
+        prevFiber = newFiber;
     })
 
 }
@@ -95,7 +117,7 @@ function performWorkUnit(fiber) {
     if (!fiber.dom) {
         // 创建dom
         let dom = (fiber.dom = createDom(fiber.type));
-        fiber.parent.dom.append(dom);
+        // fiber.parent.dom.append(dom);
     }
     // 设置props
     updateProps(fiber.dom, fiber.props);
