@@ -76,7 +76,7 @@ function commitFiber(fiber) {
 }
 
 function createDom(type) {
-    console.log(type);
+    // console.log(type);
     return type === TEXT_NODE_TYPE 
     ? document.createTextNode('')
     : document.createElement(type)
@@ -111,6 +111,27 @@ function initChildren(fiber, children) {
     })
 
 }
+
+function updateFunctionComponent(fiber) {
+    // 当fiber是一个fc的时候，就需要把它解析出来，同时把它当作children去转换
+    const children = [fiber.type(fiber.props)]; // 把它当作children去转换
+    initChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
+    if (!fiber.dom) {
+        // 创建dom
+        let dom = (fiber.dom = createDom(fiber.type));
+        // fiber.parent.dom.append(dom);
+
+        // 设置props
+        updateProps(dom, fiber.props);
+    }
+
+    // vdom -> 链表
+    const children = fiber.props?.children ?? [];
+    initChildren(fiber, children);
+}
 /**
  * fiber中需要包含的结构有
  * 1. child：Fiber类型
@@ -122,24 +143,11 @@ function initChildren(fiber, children) {
  */
 function performWorkUnit(fiber) {
     let isFunctionType = typeof fiber.type === 'function';
-    if (!isFunctionType) {
-        if (!fiber.dom) {
-            // 创建dom
-            let dom = (fiber.dom = createDom(fiber.type));
-            // fiber.parent.dom.append(dom);
-
-            // 设置props
-            updateProps(dom, fiber.props);
-        }
+    if (isFunctionType) {
+        updateFunctionComponent(fiber);
+    }else {
+        updateHostComponent(fiber)
     }
-
-    // vdom -> 链表
-
-    // 当fiber是一个fc的时候，就需要把它解析出来，同时把它当作children去转换
-    const children = isFunctionType 
-                    ? [fiber.type(fiber.props)] // 把它当作children去转换
-                    : fiber.props?.children ?? [];
-    initChildren(fiber, children);
 
     // 返回下一个节点
     if (fiber.child) {
@@ -155,8 +163,6 @@ function performWorkUnit(fiber) {
         if (fiberParent.sibling) return fiberParent.sibling;
         fiberParent = fiberParent.parent;
     }
-    // return fiber.parent.sibling;
-
 }
 
 requestIdleCallback(workLoop);
