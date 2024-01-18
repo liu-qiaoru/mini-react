@@ -1,31 +1,51 @@
 import React from './core/react.js';
 
-let count = 10;
 let props = {id: 'iddddd'};
 const Counter = ({num = 10}) => {
-
-    function onClick(){
-        count++;
-        props = {};
-        React.update();
-    }
     return (
         <div {...props}>
-            count = {count}
-            <button onClick={onClick}>click</button>
+            count = {num}
         </div>
     )
 }
 
-const Container = () => {
-    return <Counter />
-}
-const App = <div id='app'>
-                {/* <div id="app_parent">child</div> */}
-                {/* <div id="app_parent_2">child2</div> */}
-                <Container />
-                {/* <Counter num={10} /> */}
-                {/* <Counter num={20} /> */}
+const Counter1 = () => {
+    return (
+        <div>
+            'hello'
+            <div>
+                第二个 hello
             </div>
+
+<div>第三个 hello</div>
+        </div>
+    )
+}
+
+const Text1 = () => <div>hello</div>;
+const Text2 = () => <div>xxx<div>www</div></div>;
+let showChild = false;
+const Container = () => {
+    let update = React.update();
+    function onClick(){
+        showChild = !showChild;
+        update();
+    }
+    return (
+        <div>
+            count
+            {showChild ? <Text2 /> : <Text1 />} 
+            <button onClick={onClick}>showChild</button>
+        </div>
+    )
+}
+const App = () => {
+
+    return (
+        <div id='app'>
+            <Container />
+        </div>
+    )
+};
 
 export {App}

@@ -27,6 +27,8 @@ const createTextNode = (val) => {
 let wipRoot = null;
 let currentRoot = null; // 表示当前的vdom树， 用来做diff
 let newWorkOfUnit = null;
+let deletions = [];
+let wipFiber = null;
 const render = (node, container) => {
     // console.log('render--',node);
     wipRoot = {
@@ -46,6 +48,10 @@ function workLoop(deadline) {
         // 渲染一个fiber并获取下一个要渲染的vdom
         newWorkOfUnit = performWorkUnit(newWorkOfUnit);
 
+        if (wipRoot?.sibling?.type === newWorkOfUnit?.type) {
+            newWorkOfUnit = null;
+        }
+
         shouldYield = deadline.timeRemaining() < 1;
     }
 
@@ -58,11 +64,27 @@ function workLoop(deadline) {
 
 function commitRoot(fiber) {
     console.log(fiber);
+    // 删除
+    deletions.forEach(commitDelete);
+    // 新增
     commitFiber(fiber);
     currentRoot = wipRoot;
     wipRoot = null;
+    deletions = [];
 }
 
+function commitDelete(fiber) {
+    console.log('delete--', fiber);
+    if (fiber.dom) {
+        let fiberParent = fiber.parent;
+        while(!fiberParent.dom) {
+            fiberParent = fiberParent.parent;
+        }
+        fiberParent.dom.removeChild(fiber.dom);
+    } else {
+        commitDelete(fiber.child);
+    }
+}
 function commitFiber(fiber) {
     if (fiber == null) return;
     // 挂载到父节点上
@@ -138,30 +160,45 @@ function reconcileChildren(fiber, children) {
                 tag: 'update',
             };
         } else {
-            // 新建节点
-            newFiber = {
-                child: null,
-                parent: fiber,
-                sibling: null,
-                type: child.type,
-                props: child.props,
-                dom: null,
-                alternate: oldFiber,
-                tag:'init',
-            };
+            if (child) {
+                // 新节点和旧节点的类型不同，要新建节点，并且删除旧的节点，后续将旧的dom删除
+                // 新建节点
+                newFiber = {
+                    child: null,
+                    parent: fiber,
+                    sibling: null,
+                    type: child.type,
+                    props: child.props,
+                    dom: null,
+                    alternate: oldFiber,
+                    tag:'init',
+                };
+            }
+            if (oldFiber) {
+                deletions.push(oldFiber);
+            }    
+        }
+        if (oldFiber) {
+            oldFiber = oldFiber?.sibling; //  children是数组，child往下走，oldFiber实际是往旁边走
         }
         if (index === 0) {
             fiber.child = newFiber;
         } else {
             prevFiber.sibling = newFiber;
         }
-        prevFiber = newFiber;
-        oldFiber = oldFiber?.sibling; //  children是数组，child往下走，oldFiber实际是往旁边走
+        if (newFiber) {
+            prevFiber = newFiber;
+        }
     })
 
+    while (oldFiber) {
+        deletions.push(oldFiber);
+        oldFiber = oldFiber.sibling;
+    }
 }
 
 function updateFunctionComponent(fiber) {
+    wipFiber = fiber;
     // 当fiber是一个fc的时候，就需要把它解析出来，同时把它当作children去转换
     const children = [fiber.type(fiber.props)]; // 把它当作children去转换
     reconcileChildren(fiber, children);
@@ -218,12 +255,15 @@ function performWorkUnit(fiber) {
 requestIdleCallback(workLoop);
 
 function update() {
-    wipRoot = {
-        dom: currentRoot.dom,
-        props: currentRoot.props,
-        alternate: currentRoot,
+    let currentFiber = wipFiber;
+    return () => {
+        wipRoot = {
+            ...currentFiber,
+            alternate: currentFiber,
+        }
+        newWorkOfUnit = wipRoot;
+
     }
-    newWorkOfUnit = wipRoot;
 }
 
 const React = {
