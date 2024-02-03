@@ -42,7 +42,7 @@ const render = (node, container) => {
 
 function workLoop(deadline) {
     // 当前空余时间已经不够1ms了，不在执行任务
-    let shouldYield = deadline.timeRemaining() < 1;
+    let shouldYield = false;
     while (!shouldYield && newWorkOfUnit)  {
 
         // 渲染一个fiber并获取下一个要渲染的vdom
@@ -63,16 +63,57 @@ function workLoop(deadline) {
 }
 
 function commitRoot(fiber) {
-    console.log(fiber);
+    // console.log(fiber);
     // 删除
     deletions.forEach(commitDelete);
     // 新增
     commitFiber(fiber);
+    commitEffectHooks();
     currentRoot = wipRoot;
     wipRoot = null;
     deletions = [];
 }
 
+function commitEffectHooks() {
+    function run(fiber) {
+        if (fiber == null) return;
+        if (!fiber.alternate) {
+            // init
+            fiber.effectHooks?.forEach(hook => {
+                hook.cleanup = hook.callback();
+            })
+        } else {
+            // update
+            fiber.effectHooks?.forEach((newHook, index) => {
+                if (newHook.deps.length > 0){
+                    let oldHook = fiber.alternate.effectHooks[index];
+                    // 判断oldDeps和newDeps是否相同
+                    let needUpdate = oldHook.deps.some((oldDep, oldIndex) => {
+                        return oldDep !== newHook.deps[oldIndex]
+                    })
+    
+                    needUpdate && (newHook.cleanup = newHook.callback());
+                }
+
+            })   
+        }
+        run(fiber.child);
+        run(fiber.sibling);
+    }
+
+    function runCleanUp(fiber) {
+        if (!fiber) return;
+        fiber.alternate?.effectHooks?.forEach(hook => {
+            if (hook.deps.length > 0) {
+                hook.cleanup?.();
+            }
+        });
+        runCleanUp(fiber.alternate?.child);
+        runCleanUp(fiber.alternate?.sibling);
+    }
+    runCleanUp(wipRoot);
+    run(wipRoot);
+}
 function commitDelete(fiber) {
     console.log('delete--', fiber);
     if (fiber.dom) {
@@ -170,7 +211,6 @@ function reconcileChildren(fiber, children) {
                     type: child.type,
                     props: child.props,
                     dom: null,
-                    alternate: oldFiber,
                     tag:'init',
                 };
             }
@@ -199,6 +239,8 @@ function reconcileChildren(fiber, children) {
 
 function updateFunctionComponent(fiber) {
     wipFiber = fiber;
+    stateHooks = [];
+    stateHookIndex = 0;
     // 当fiber是一个fc的时候，就需要把它解析出来，同时把它当作children去转换
     const children = [fiber.type(fiber.props)]; // 把它当作children去转换
     reconcileChildren(fiber, children);
@@ -266,8 +308,55 @@ function update() {
     }
 }
 
+let stateHooks = [];
+let stateHookIndex = 0;
+function useState(init) {
+    let currentFiber = wipFiber;
+    let oldHook = currentFiber?.alternate?.stateHooks?.[stateHookIndex];
+    const stateHook = {
+        state: oldHook?.state ?? init,
+        queue: oldHook?.queue ?? [],
+    }
+
+    stateHook.queue.forEach(action => {
+        stateHook.state = action(stateHook.state);
+    })
+    stateHook.queue = [];
+    stateHooks.push(stateHook);
+    stateHookIndex++;
+    currentFiber.stateHooks = stateHooks;
+
+    const setState = (action) => {
+        let eagerState = typeof action === 'function' ? action(stateHook.state) : action;
+        if (eagerState === stateHook.state) return ;
+        stateHook.queue.push(typeof action === 'function' ? action : () => action);
+
+        wipRoot = {
+            ...currentFiber,
+            alternate: currentFiber,
+        }
+        newWorkOfUnit = wipRoot;
+    }
+
+
+    return [stateHook.state, setState];
+}
+let effectHooks = [];
+function useEffect(callback, deps) {
+    let currentFiber = wipFiber;
+    let effectHook = {
+        callback: callback,
+        deps: deps,
+        cleanup: undefined,
+    }
+    effectHooks.push(effectHook);
+    currentFiber.effectHooks = effectHooks;
+}
+
 const React = {
     update,
+    useState,
+    useEffect,
     render,
     createElement
 }
